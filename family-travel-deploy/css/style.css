@@ -296,12 +296,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 /* ---------- 随机放映 ---------- */
 .slideshow { position: fixed; inset: 0; z-index: 320; background: rgba(10,16,24,.96); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 58px 30px 20px; height: 100dvh; overflow: hidden; }
-.slide-stage { position: relative; flex: 1 1 auto; min-height: 0; height: auto; width: min(1000px, 92vw); display: grid; place-items: center; user-select: none; cursor: pointer; }
-.slide-stage img { max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 16px; box-shadow: 0 30px 90px rgba(0,0,0,.6); transition: opacity .25s; animation: fadeIn .6s; }
+.slide-stage { position: relative; flex: 1 1 0; min-height: 0; height: auto; width: min(1000px, 92vw); display: grid; place-items: center; user-select: none; cursor: pointer; }
+/* 图片高度上限 = 视口减去(顶部留白+文字+按钮)，竖图横图都居中、文字始终在图片下方 */
+.slide-stage img { max-height: calc(100dvh - 235px); max-width: 100%; object-fit: contain; border-radius: 16px; box-shadow: 0 30px 90px rgba(0,0,0,.6); transition: opacity .25s; animation: fadeIn .6s; }
 .slide-stage img.dim { opacity: 0; }
 .slide-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 16px; animation: fadeIn .6s; }
 .slide-live-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,.2); color: #fff; font-size: 13px; padding: 7px 18px; border-radius: 999px; backdrop-filter: blur(6px); pointer-events: none; }
-.slide-caption { color: #fff; text-align: center; margin-top: 14px; font-size: 17px; flex-shrink: 0; animation: fadeIn .6s; }
+.slide-caption { color: #fff; text-align: center; margin-top: 14px; font-size: 17px; flex-shrink: 0; max-width: 92vw; overflow-wrap: anywhere; animation: fadeIn .6s; }
 .slide-caption span { display: block; font-size: 13px; opacity: .65; margin-top: 3px; }
 .slide-controls { display: flex; gap: 10px; margin-top: 16px; flex-shrink: 0; }
 .slide-controls button { color: #fff; font-size: 16px; width: 52px; height: 44px; border-radius: 12px; background: rgba(255,255,255,.14); transition: .2s; }
@@ -373,9 +374,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .manual-route-fields select { min-width: 128px; }
 }
 
-/* 手机：详情弹窗全屏竖向、单列滚动（fixed 铺满，不受遮罩留白/滚动条宽度影响） */
+/* 手机：详情弹窗 = 略小于屏幕的悬浮卡片，左右各留 10px 严格对称，不再溢出 */
 @media (max-width: 860px) {
-  .modal.modal-page { position: fixed; inset: 0; width: auto; max-width: none; height: 100dvh; max-height: none; border-radius: 0; padding: 18px 16px; overflow-y: auto; z-index: 210; }
+  .modal.modal-page { position: fixed; left: 10px; right: 10px; top: 12px; bottom: 12px; width: auto; max-width: none; height: auto; max-height: none; border-radius: 18px; padding: 18px 16px; overflow-y: auto; z-index: 210; }
+  /* 保险：内部任何元素都不许超出弹窗宽度 */
+  .modal.modal-page .detail-left, .modal.modal-page .detail-right { min-width: 0; max-width: 100%; }
+  .modal.modal-page input, .modal.modal-page textarea, .modal.modal-page select, .modal.modal-page img, .modal.modal-page video { max-width: 100%; }
+  .modal.modal-page .date-range { flex-wrap: wrap; }
+  .modal.modal-page .date-range input { flex: 1 1 40%; min-width: 0; }
   .detail-grid { grid-template-columns: 1fr; overflow-y: auto; min-height: 0; gap: 20px; }
   .detail-left { overflow-y: visible; padding-right: 0; }
   .detail-right .media-grid { overflow-y: visible; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -383,8 +389,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .date-range input { flex: 1 1 40%; }
   .media-grid { grid-template-columns: repeat(2, 1fr); }
   .modal.modal-page h3 { font-size: 20px; }
-  /* 手机：放映全屏自适应，按钮不挤出屏幕 */
+  /* 手机：放映全屏自适应，图片高度上限保证文字和按钮始终可见 */
   .slideshow { padding: 54px 12px 12px; }
+  .slide-stage img { max-height: calc(100dvh - 200px); }
   .slide-caption { font-size: 15px; }
   .slide-controls { margin-top: 12px; }
   #slideClose { top: 10px; right: 10px; }

@@ -295,18 +295,20 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .lightbox-nav:hover, .lightbox-close:hover { background: rgba(255,255,255,.28); }
 
 /* ---------- 随机放映 ---------- */
-.slideshow { position: fixed; inset: 0; z-index: 320; background: rgba(10,16,24,.96); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
-.slide-stage { position: relative; width: min(1000px, 92vw); height: min(66vh, 640px); display: grid; place-items: center; user-select: none; cursor: pointer; }
+.slideshow { position: fixed; inset: 0; z-index: 320; background: rgba(10,16,24,.96); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 58px 30px 20px; height: 100dvh; overflow: hidden; }
+.slide-stage { position: relative; flex: 1 1 auto; min-height: 0; height: auto; width: min(1000px, 92vw); display: grid; place-items: center; user-select: none; cursor: pointer; }
 .slide-stage img { max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 16px; box-shadow: 0 30px 90px rgba(0,0,0,.6); transition: opacity .25s; animation: fadeIn .6s; }
 .slide-stage img.dim { opacity: 0; }
 .slide-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 16px; animation: fadeIn .6s; }
 .slide-live-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,.2); color: #fff; font-size: 13px; padding: 7px 18px; border-radius: 999px; backdrop-filter: blur(6px); pointer-events: none; }
-.slide-caption { color: #fff; text-align: center; margin-top: 18px; font-size: 17px; animation: fadeIn .6s; }
+.slide-caption { color: #fff; text-align: center; margin-top: 14px; font-size: 17px; flex-shrink: 0; animation: fadeIn .6s; }
 .slide-caption span { display: block; font-size: 13px; opacity: .65; margin-top: 3px; }
-.slide-controls { display: flex; gap: 10px; margin-top: 22px; }
+.slide-controls { display: flex; gap: 10px; margin-top: 16px; flex-shrink: 0; }
 .slide-controls button { color: #fff; font-size: 16px; width: 52px; height: 44px; border-radius: 12px; background: rgba(255,255,255,.14); transition: .2s; }
 .slide-controls button:hover { background: rgba(255,255,255,.3); }
-#slideClose { width: auto; padding: 0 18px; font-size: 13px; }
+/* 关闭按钮固定在右上角，无论屏幕多矮都能看到、点到 */
+#slideClose { position: fixed; top: 14px; right: 16px; z-index: 10; width: auto; padding: 9px 20px; font-size: 13px; color: #fff; background: rgba(255,255,255,.16); border-radius: 999px; backdrop-filter: blur(6px); }
+#slideClose:hover { background: rgba(255,255,255,.32); }
 @keyframes fadeIn { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: scale(1); } }
 
 /* ---------- 弹窗通用 ---------- */
@@ -371,9 +373,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .manual-route-fields select { min-width: 128px; }
 }
 
-/* 手机：详情弹窗全屏竖向、单列滚动 */
+/* 手机：详情弹窗全屏竖向、单列滚动（fixed 铺满，不受遮罩留白/滚动条宽度影响） */
 @media (max-width: 860px) {
-  .modal.modal-page { width: 100vw; height: 100vh; height: 100dvh; max-height: none; border-radius: 0; padding: 18px 16px; overflow-y: auto; }
+  .modal.modal-page { position: fixed; inset: 0; width: auto; max-width: none; height: 100dvh; max-height: none; border-radius: 0; padding: 18px 16px; overflow-y: auto; z-index: 210; }
   .detail-grid { grid-template-columns: 1fr; overflow-y: auto; min-height: 0; gap: 20px; }
   .detail-left { overflow-y: visible; padding-right: 0; }
   .detail-right .media-grid { overflow-y: visible; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -381,6 +383,11 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .date-range input { flex: 1 1 40%; }
   .media-grid { grid-template-columns: repeat(2, 1fr); }
   .modal.modal-page h3 { font-size: 20px; }
+  /* 手机：放映全屏自适应，按钮不挤出屏幕 */
+  .slideshow { padding: 54px 12px 12px; }
+  .slide-caption { font-size: 15px; }
+  .slide-controls { margin-top: 12px; }
+  #slideClose { top: 10px; right: 10px; }
 }
 /* 手机：时间线从上往下 */
 @media (max-width: 860px) {

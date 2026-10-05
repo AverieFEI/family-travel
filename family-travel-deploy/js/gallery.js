@@ -14,6 +14,13 @@ FT.Gallery = {
       else clearTimeout(this._timer);
     });
     document.addEventListener("keydown", (e) => {
+      /* 放映优先：Esc 关闭，左右键切换 */
+      if (!FT.$("#slideshowOverlay").classList.contains("hidden")) {
+        if (e.key === "Escape") this.stopSlideshow();
+        if (e.key === "ArrowLeft") this._slideStep(-1);
+        if (e.key === "ArrowRight") this._slideStep(1);
+        return;
+      }
       if (FT.$("#lightbox").classList.contains("hidden")) return;
       if (e.key === "Escape") FT.$("#lightbox").classList.add("hidden");
       if (e.key === "ArrowLeft") FT.Lightbox.nav(-1);
@@ -81,6 +88,7 @@ FT.Gallery = {
     FT.$("#slideToggle").textContent = "⏸";
     FT.$("#slideshowOverlay").classList.remove("hidden");
     this._slideShow();
+    this._schedule();   /* 启动自动轮播定时器（此前遗漏导致不会自动播放） */
   },
 
   _slideStep(d) {

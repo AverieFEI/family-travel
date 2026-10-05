@@ -127,11 +127,20 @@ FT.Map = {
         return geo;
       }
     } catch (e) { /* 缓存损坏则忽略 */ }
-    /* 2) 在线拉取并写入缓存 */
-    const geo = await fetch(`https://geo.datav.aliyun.com/areas_v3/bound/${adcode}_full.json`).then(r => {
-      if (!r.ok) throw new Error("geo " + r.status);
-      return r.json();
-    });
+    /* 2) 本地内置数据 → 在线 CDN 兜底（双保险，弱网也能下钻） */
+    const sources = [
+      `js/vendor/geo/${adcode}_full.json`,
+      `js/vendor/${adcode}_full.json`,
+      `https://geo.datav.aliyun.com/areas_v3/bound/${adcode}_full.json`
+    ];
+    let geo = null;
+    for (const src of sources) {
+      try {
+        geo = await fetch(src).then(r => { if (!r.ok) throw new Error("geo " + r.status); return r.json(); });
+        break;
+      } catch (e) { /* 该源失败，尝试下一个 */ }
+    }
+    if (!geo) throw new Error("地图数据不可用");
     this.geoCache[adcode] = geo;
     try { localStorage.setItem("ft_geo_" + adcode, JSON.stringify(geo)); } catch (e) { /* 存储满则跳过 */ }
     return geo;

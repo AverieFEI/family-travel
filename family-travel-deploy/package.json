@@ -1,0 +1,16 @@
+{
+  "name": "family-travel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "家庭旅行网站 · 云同步版",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  }
+}

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我们家的旅行记录 · Family Travel</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ======= 导航 ======= -->
+<header class="navbar" id="navbar">
+  <div class="nav-inner">
+    <a class="brand" href="#hero">
+      <span class="brand-icon">🧭</span>
+      <span class="brand-text">家的旅行足迹<em>FAMILY TRAVEL</em></span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#hero">首页</a>
+      <a href="#mapSection">旅行地图</a>
+      <a href="#recordSection">旅行记录</a>
+      <a href="#timelineSection">时间线</a>
+      <a href="#gallerySection">照片墙</a>
+    </nav>
+    <div class="nav-user">
+      <button class="family-chip hidden" id="familyChip" title="家庭信息">🏠 <span id="familyChipName"></span></button>
+      <button class="btn btn-ghost btn-sm" id="loginBtn">登录</button>
+      <div class="user-chip hidden" id="userChip">
+        <span class="avatar" id="userAvatar">旅</span>
+        <span id="userName"></span>
+        <button class="btn-logout" id="logoutBtn">退出</button>
+      </div>
+    </div>
+    <button class="nav-burger" id="navBurger">☰</button>
+  </div>
+</header>
+
+<!-- ======= 首页 ======= -->
+<section class="hero" id="hero">
+  <div class="hero-bg"></div>
+  <div id="floaters" class="floaters"></div>
+  <div class="hero-content">
+    <p class="hero-eyebrow">❤️ 从家出发 · 把爱带到远方</p>
+    <h1 class="hero-title">我们一家的<span class="accent">旅行记录</span></h1>
+    <p class="hero-sub">点击地图连线、写下故事、收藏最爱——<br>让每一次全家出动，都变成可以反复打开的回忆。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="#mapSection">规划地图路线 →</a>
+      <a class="btn btn-outline btn-lg" href="#recordSection">写旅行记录</a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><b id="statRecords">0</b><span>条旅行记录</span></div>
+      <div class="stat"><b id="statProvinces">0</b><span>个省份足迹</span></div>
+      <div class="stat"><b id="statPhotos">0</b><span>张照片/视频</span></div>
+      <div class="stat"><b id="statStars">0</b><span>颗最爱五角星</span></div>
+    </div>
+    <!-- 温馨小设计 -->
+    <div class="hero-warm">
+      <div class="warm-card card quote-card">
+        <span class="quote-mark">❝</span>
+        <p id="quoteText"></p>
+        <span class="quote-src">— 我们家的旅行语录</span>
+      </div>
+      <div class="warm-card card goal-card">
+        <h4>🎯 旅行小目标</h4>
+        <p id="goalText">已打卡 0 / 34 个省级行政区</p>
+        <div class="goal-bar"><i id="goalFill"></i></div>
+        <span class="goal-remain" id="goalRemain"></span>
+      </div>
+      <div class="warm-card card" id="familyCard"></div>
+      <div class="warm-card card" id="memoryCard"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======= 旅行地图 ======= -->
+<section class="section" id="mapSection">
+  <div class="section-head">
+    <p class="eyebrow">TRAVEL MAP</p>
+    <h2>旅行地图 · 点击连线</h2>
+    <p class="section-desc">点击「添加路线」，先点地图选<b>起点</b>，再点选<b>终点</b>，一条旅行路线就画好啦（仅中国地图）。</p>
+  </div>
+  <div class="map-toolbar card">
+    <div class="map-toolbar-row">
+      <button class="btn btn-primary" id="routeToggleBtn"><span>＋ 添加路线</span></button>
+      <button class="btn btn-ghost" id="routeClearBtn">🧹 清空我的路线</button>
+      <button class="btn btn-ghost hidden" id="mapBackBtn">← 返回全国</button>
+      <span class="map-loc" id="mapLocLabel"></span>
+      <span class="map-hint" id="routeHint">点击「添加路线」在地图上连线，或用下方「手动选择省市」</span>
+    </div>
+    <div class="map-legend">
+      <span><i class="dot dot-home"></i>起点</span>
+      <span><i class="dot dot-dest"></i>终点</span>
+      <span><i class="dot dot-route"></i>旅行路线</span>
+      <span>共 <b id="routeCount">0</b> 条</span>
+    </div>
+  </div>
+  <div class="manual-route card">
+    <div class="manual-route-title">🔤 手动选择省市添加路线</div>
+    <div class="manual-route-fields">
+      <label>出发省份 <select id="mrFromProv"><option value="">省份</option></select></label>
+      <label>出发城市 <select id="mrFromCity" disabled><option value="">城市</option></select></label>
+      <span class="mr-arrow">➜</span>
+      <label>到达省份 <select id="mrToProv"><option value="">省份</option></select></label>
+      <label>到达城市 <select id="mrToCity" disabled><option value="">城市</option></select></label>
+      <button class="btn btn-primary" id="mrAddBtn">＋ 添加这条路线</button>
+    </div>
+    <p class="create-tip">💡 点击地图上的省份可下钻查看该省所有地级市；再次点击地图可直接在市一级选点连线。</p>
+  </div>
+  <div class="map-layout">
+    <div class="map-wrap card">
+      <div id="chinaMap"></div>
+      <div id="mapFallback" class="map-fallback hidden">🗺️ 地图资源加载失败，请检查网络后刷新重试</div>
+    </div>
+    <aside class="route-panel">
+      <h4>🧭 路线列表</h4>
+      <div class="route-list" id="routeList"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ======= 旅行记录 ======= -->
+<section class="section" id="recordSection">
+  <div class="section-head">
+    <p class="eyebrow">TRAVEL LOG</p>
+    <h2>旅行记录</h2>
+    <p class="section-desc">选择省份和地级市创建记录；点开记录可设置日期、写描述、上传照片/视频/Live图、点亮五角星、添加景点 tag。</p>
+  </div>
+
+  <div class="create-bar card">
+    <div class="create-fields">
+      <label>省份
+        <select id="provSel"><option value="">选择省份</option></select>
+      </label>
+      <label>地级市
+        <select id="citySel" disabled><option value="">选择地级市</option></select>
+      </label>
+      <button class="btn btn-primary" id="createRecBtn">＋ 创建旅行记录</button>
+    </div>
+    <p class="create-tip">💡 覆盖全国 34 个省级行政区及所有地级市/州/盟；封面可在创建时从相册选择。</p>
+  </div>
+
+  <div class="record-grid" id="recordGrid"></div>
+  <p class="dest-empty hidden" id="recordEmpty">还没有旅行记录，从上方选择省份和城市开始记录吧 ✈️</p>
+</section>
+
+<!-- ======= 时间线 ======= -->
+<section class="section" id="timelineSection">
+  <div class="section-head">
+    <p class="eyebrow">TIMELINE</p>
+    <h2>我们家的旅行时间线</h2>
+    <p class="section-desc">按时间从早到晚排列 · 电脑上从左往右看，手机上从上往下看 · 点击节点可打开对应记录</p>
+  </div>
+  <div class="timeline-box" id="timelineBox"></div>
+</section>
+
+<!-- ======= 照片墙 ======= -->
+<section class="section section-gallery" id="gallerySection">
+  <div class="section-head">
+    <p class="eyebrow">PHOTO WALL</p>
+    <h2>⭐ 最爱的照片墙</h2>
+    <p class="section-desc">旅行记录里点亮五角星的照片都会汇聚在这里，共 <b id="galleryCount">0</b> 张；点击开始随机放映 🎬</p>
+    <button class="btn btn-primary btn-lg" id="slideshowBtn" style="margin-top:14px">🎬 开始随机放映</button>
+  </div>
+  <div class="gallery-grid" id="galleryGrid"></div>
+  <p class="dest-empty hidden" id="galleryEmpty">还没有点亮五角星的照片，去「旅行记录」里点亮 ⭐ 吧</p>
+</section>
+
+<!-- ======= 页脚 ======= -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="brand"><span class="brand-icon">🧭</span> 家的旅行足迹</div>
+    <p>记录我们一起看过的山川湖海 · 从家出发，爱在路上</p>
+    <p class="footer-copy">© 2026 我们一家人 · Made with ❤️ &amp; 脚步</p>
+  </div>
+</footer>
+
+<!-- ======= 登录 / 注册 / 家庭设置 ======= -->
+<div class="modal-mask hidden" id="authModal">
+  <div class="modal card">
+    <button class="modal-close" id="authClose">✕</button>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-mode="login">登录</button>
+      <button class="auth-tab" data-mode="register">注册</button>
+    </div>
+
+    <form id="authForm">
+      <label>用户名
+        <input type="text" id="authUser" placeholder="昵称（如：爸爸 / 朵朵）" required maxlength="12">
+      </label>
+      <label>密码
+        <input type="password" id="authPass" placeholder="至少 4 位" required>
+      </label>
+      <label class="hidden" id="authPass2Wrap">确认密码
+        <input type="password" id="authPass2" placeholder="请再次输入密码">
+      </label>
+      <p class="auth-error hidden" id="authError"></p>
+      <button type="submit" class="btn btn-primary btn-block" id="authSubmit">登 录</button>
+    </form>
+
+    <div id="authFamilySetup" class="hidden">
+      <h3 class="fam-setup-title">🏠 创建或加入你的家庭</h3>
+      <p class="auth-sub">家庭成员凭邀请码加入后，上传的照片全家共享；非家庭成员无法查看。</p>
+      <div class="fam-setup-grid">
+        <div class="fam-setup-col">
+          <h5>创建新家庭</h5>
+          <input type="text" id="famCreateName" placeholder="家庭名称（如：幸福之家）" maxlength="10">
+          <button type="button" class="btn btn-primary btn-block" id="famCreateBtn">创建家庭</button>
+        </div>
+        <div class="fam-setup-col">
+          <h5>加入已有家庭</h5>
+          <input type="text" id="famJoinCode" placeholder="输入 6 位家庭邀请码" maxlength="6" style="text-transform:uppercase">
+          <button type="button" class="btn btn-outline-dark btn-block" id="famJoinBtn">加入家庭</button>
+        </div>
+      </div>
+      <p class="auth-skip">暂时跳过？<a href="javascript:void(0)" id="famSkip">稍后再说</a>（不加入家庭则无法看到他人照片）</p>
+    </div>
+  </div>
+</div>
+
+<!-- ======= 家庭信息面板 ======= -->
+<div class="modal-mask hidden" id="familyPanel">
+  <div class="modal card">
+    <button class="modal-close" id="familyPanelClose">✕</button>
+    <div id="famPanelInfo" class="hidden">
+      <h3 id="famPanelName">🏠</h3>
+      <p class="auth-sub">把邀请码发给家人，注册后输入即可加入，共享照片 📷</p>
+      <div class="fam-code-box">
+        <span>邀请码</span><b id="famPanelCode">------</b>
+        <button class="btn btn-ghost btn-sm" id="famPanelCopy">复制</button>
+      </div>
+      <h5 class="fam-members-title">家庭成员</h5>
+      <div class="fam-members" id="famPanelMembers"></div>
+      <button class="btn btn-danger btn-block" id="famPanelLeave">退出家庭</button>
+    </div>
+    <div id="famPanelEmpty" class="hidden">
+      <h3>🏠 家庭</h3>
+      <p class="auth-sub">你还没有加入家庭，创建一个并邀请家人加入吧！</p>
+      <button class="btn btn-primary btn-block" id="famPanelSetup">去创建 / 加入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= 创建旅行记录 ======= -->
+<div class="modal-mask hidden" id="recCreateModal">
+  <div class="modal card">
+    <button class="modal-close" id="recCreateClose">✕</button>
+    <h3 id="recCreateTitle">创建旅行记录</h3>
+    <p class="auth-sub" id="recCreateSub"></p>
+    <div class="cover-pick">
+      <img id="recCoverPreview" class="hidden" alt="封面预览">
+      <label class="cover-pick-btn">
+        🖼 从相册选择封面（可选）
+        <input type="file" id="recCoverInput" accept="image/*" hidden>
+      </label>
+    </div>
+    <button class="btn btn-primary btn-block" id="recCreateSubmit">✈️ 创建记录</button>
+  </div>
+</div>
+
+<!-- ======= 旅行记录详情 ======= -->
+<div class="modal-mask hidden" id="recDetailModal">
+  <div class="modal modal-page card">
+    <button class="modal-close" id="recDetailClose">✕</button>
+    <h3 id="recDetailTitle">📍 旅行记录</h3>
+    <p class="rec-meta" id="recDetailMeta"></p>
+
+    <div class="detail-grid">
+      <div class="detail-left">
+        <label class="field-label">🖼 封面照片</label>
+        <div class="cover-row">
+          <button class="btn btn-ghost btn-sm" id="recCoverUploadBtn">📤 从相册选一张</button>
+          <span class="rec-cover-name" id="recCoverName"></span>
+        </div>
+        <input type="file" id="recCoverFileInput" accept="image/*" hidden>
+        <label class="field-label">🗓 旅行时间（从某年月日 到 某年月日）</label>
+        <div class="date-range">
+          <input type="date" id="recDateStartInput" title="开始日期">
+          <span>至</span>
+          <input type="date" id="recDateEndInput" title="结束日期">
+        </div>
+        <label class="field-label">✍️ 旅行描述</label>
+        <textarea id="recDescInput" rows="5" placeholder="写写这趟旅行的故事…"></textarea>
+        <label class="field-label">🏷 景点 tag（回车添加）</label>
+        <div id="recTagList" class="tag-list"></div>
+        <div id="recTagAddWrap"><input type="text" id="recTagInput" placeholder="如：黄鹤楼 / 长江大桥 / 热干面" maxlength="12"></div>
+      </div>
+      <div class="detail-right">
+        <div class="media-bar" id="recDetailMediaBar">
+          <button class="btn btn-ghost btn-sm" id="recPhotoPickBtn">📷 照片</button>
+          <button class="btn btn-ghost btn-sm" id="recVideoPickBtn">🎬 视频</button>
+          <button class="btn btn-ghost btn-sm" id="recLivePickBtn">✨ Live图</button>
+          <span class="upload-hint" id="recUploadHint"></span>
+          <input type="file" id="recPhotoInput" accept="image/*" multiple hidden>
+          <input type="file" id="recVideoInput" accept="video/*" multiple hidden>
+          <input type="file" id="livePhotoPick" accept="image/*" hidden>
+          <input type="file" id="liveVideoPick" accept="video/*" hidden>
+        </div>
+        <div class="media-grid" id="recMediaGrid"></div>
+      </div>
+    </div>
+    <button class="btn btn-danger btn-block hidden" id="recDetailDel">🗑 删除这条旅行记录</button>
+  </div>
+</div>
+
+<!-- ======= 灯箱 ======= -->
+<div class="lightbox hidden" id="lightbox">
+  <button class="lightbox-close" id="lightboxClose">✕</button>
+  <button class="lightbox-nav lightbox-prev" id="lightboxPrev">‹</button>
+  <button class="lightbox-nav lightbox-next" id="lightboxNext">›</button>
+  <figure class="lightbox-figure" id="lightboxFigure"></figure>
+</div>
+
+<!-- ======= 随机放映 ======= -->
+<div class="slideshow hidden" id="slideshowOverlay">
+  <div class="slide-stage" id="slideStage"></div>
+  <div class="slide-caption" id="slideCaption"></div>
+  <div class="slide-controls">
+    <button id="slidePrev">‹</button>
+    <button id="slideToggle">⏸</button>
+    <button id="slideNext">›</button>
+    <button id="slideClose">✕ 关闭</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="js/vendor/echarts.min.js"></script>
+<script>window.echarts || document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"><\/script>')</script>
+<script src="js/china.js"></script>
+<script src="js/core.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/map.js"></script>
+<script src="js/records.js"></script>
+<script src="js/gallery.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

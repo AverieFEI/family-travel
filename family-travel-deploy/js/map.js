@@ -225,6 +225,26 @@ FT.Map = {
         return [pts.reduce((s, p) => s + p[0], 0) / n, pts.reduce((s, p) => s + p[1], 0) / n];
       }
     }
+    /* 兜底 2：直辖市（北京/上海/天津/重庆）——市级数据里没有同名区县，直接用市政府坐标 */
+    const MUNI_COORD = {
+      "北京市": [116.407, 39.904], "天津市": [117.200, 39.084],
+      "上海市": [121.474, 31.230], "重庆市": [106.551, 29.563]
+    };
+    const bare = city.replace(/市$/, "");
+    if (MUNI_COORD[city]) return MUNI_COORD[city];
+    if (MUNI_COORD[bare + "市"]) return MUNI_COORD[bare + "市"];
+    /* 兜底 3：仍找不到时，取全省所有区县的几何中心，保证路线一定能加上 */
+    let all = [];
+    geo.features.forEach(ft => {
+      const g = ft.geometry || {};
+      const collect = (poly) => poly.forEach(ring => all = all.concat(ring));
+      if (g.type === "Polygon") collect([g.coordinates[0]]);
+      else if (g.type === "MultiPolygon") g.coordinates.forEach(p => collect([p[0]]));
+    });
+    if (all.length) {
+      const n = all.length;
+      return [all.reduce((s, p) => s + p[0], 0) / n, all.reduce((s, p) => s + p[1], 0) / n];
+    }
     return CITY_COORD[city] || null;
   },
 

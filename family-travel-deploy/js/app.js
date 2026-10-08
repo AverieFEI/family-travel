@@ -32,7 +32,7 @@ FT.Home = {
     const recs = FT.Records.visible();
     const provs = new Set(recs.map(r => r.province));
     let photos = 0, stars = 0, videos = 0;
-    recs.forEach(r => r.media.forEach(m => {
+    recs.forEach(r => (r.media || []).forEach(m => {
       if (m.type !== "video") photos++;
       if (m.type !== "image") videos++;
       if (m.starred) stars++;
@@ -82,29 +82,31 @@ FT.Home = {
 
   /* ---------- 回忆碎片 ---------- */
   renderMemory(refresh) {
-    const recs = FT.Records.visible().filter(r => r.media.length);
+    const all = FT.Records.visible();
+    let recs = all.filter(r => (r.media || []).length);
     const box = FT.$("#memoryCard");
-    if (!recs.length) {
+    if (!all.length) {
       box.innerHTML = `<h4>🎲 回忆碎片</h4><p class="family-tip">创建第一条旅行记录后，这里会随机掉落一段回忆。</p>`;
       return;
     }
+    /* 暂时没有带照片的记录时，退而展示纯文字回忆，卡片不再一直空白 */
+    if (!recs.length) recs = all;
     let pick;
     if (refresh || !this._memoryId || !(pick = recs.find(r => r.id === this._memoryId))) {
       pick = recs[Math.floor(Math.random() * recs.length)];
       this._memoryId = pick.id;
     }
-    const m = pick.media[pick.media.length - 1];
+    const m = (pick.media || []).length ? pick.media[pick.media.length - 1] : null;
+    const txt = `
+        <div class="memory-text${m ? "" : " solo"}">
+          <b>${FT.esc(pick.city)} · ${FT.esc(FT.dateRange(pick))}</b>
+          <p>${FT.esc((pick.desc || "这段旅程还没有描述…").slice(0, m ? 46 : 90))}</p>
+        </div>`;
     box.innerHTML = `
       <h4>🎲 回忆碎片</h4>
-      <div class="memory-row">
-        <img data-asset="${m.asset}" alt="">
-        <div class="memory-text">
-          <b>${FT.esc(pick.city)} · ${FT.esc(FT.dateRange(pick))}</b>
-          <p>${FT.esc((pick.desc || "这段旅程还没有描述…").slice(0, 46))}</p>
-        </div>
-      </div>
+      ${m ? `<div class="memory-row"><img data-asset="${m.asset}" alt="">${txt}</div>` : txt}
       <button class="memory-refresh" id="memoryRefresh" title="换一段回忆">🎲 换一段</button>`;
-    (async () => { const img = box.querySelector("img"); img.src = await FT.Assets.url(m.asset) || ""; })();
+    if (m) (async () => { const img = box.querySelector("img"); img.src = await FT.Assets.url(m.asset) || ""; })();
     FT.$("#memoryRefresh").addEventListener("click", () => this.renderMemory(true));
     this.renderStats(); this.renderGoal();
   },

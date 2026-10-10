@@ -196,19 +196,34 @@
   FT.Assets.put = async function (id, blob) {
     const r = await origPut(id, blob);           // 本地 IndexedDB
     if (Cloud.on && Cloud.token) {
+      const fail = (msg) => {
+        const p = pendList();
+        if (!p.includes(id)) { p.push(id); pendSave(p); }
+        FT.toast(msg);
+      };
       try {
-        await fetch(Cloud.url("/api/asset/") + id, {
+        const res = await fetch(Cloud.url("/api/asset/") + id, {
           method: "PUT",
           headers: { "X-File-Type": blob.type || "application/octet-stream" },
           body: blob
         });
-        const p = pendList();                     // 上传成功则从待重试名单移除
-        if (p.includes(id)) pendSave(p.filter(x => x !== id));
+        if (!res.ok) {
+          /* HTTP 错误（500 等）fetch 不抛异常，需手动识别 */
+          let msg = "上传失败";
+          try { msg = (await res.json()).error || msg; } catch {}
+          if (/size limit|已满|exceeded/i.test(msg)) {
+            fail("云数据库已满（1GB 上限），请到「存储管理」清理 🧹");
+          } else {
+            console.warn("云端上传失败", id, msg);
+            fail("照片已存本地，云端上传失败，稍后自动重试 ☁");
+          }
+        } else {
+          const p = pendList();                   // 上传成功则从待重试名单移除
+          if (p.includes(id)) pendSave(p.filter(x => x !== id));
+        }
       } catch (e) {
         console.warn("云端上传失败", id, e);
-        const p = pendList();
-        if (!p.includes(id)) { p.push(id); pendSave(p); }
-        FT.toast("照片已存本地，云端上传失败，稍后自动重试 ☁");
+        fail("照片已存本地，云端上传失败，稍后自动重试 ☁");
       }
     }
     return r;

@@ -135,6 +135,29 @@
 
       FT.Auth.render();
       FT.refreshAll();
+
+      /* 自动补传此前失败的照片（限频：60 秒一次） */
+      const pend = pendList();
+      if (pend.length && Date.now() - (Cloud._lastRetryAt || 0) > 60000) {
+        Cloud._lastRetryAt = Date.now();
+        (async () => {
+          const remain = [];
+          for (const id of pend) {
+            const blob = await FT.Assets.get(id);
+            if (!blob) continue;
+            try {
+              const r = await fetch(Cloud.url("/api/asset/") + id, {
+                method: "PUT",
+                headers: { "X-File-Type": blob.type || "application/octet-stream" },
+                body: blob
+              });
+              if (!r.ok) remain.push(id);
+            } catch { remain.push(id); }
+          }
+          pendSave(remain);
+          if (remain.length < pend.length) FT.toast("部分照片已补传到云端 ☁");
+        })().catch(() => {});
+      }
     } finally { Cloud._pulling = false; }
   };
 
@@ -163,6 +186,13 @@
   /* ---------- 资产：put/del 同步云端，url 直连云端 ---------- */
   const origPut = FT.Assets.put.bind(FT.Assets);
   const origDel = FT.Assets.del.bind(FT.Assets);
+  const PEND_KEY = "ft_pending_assets";
+  function pendList() {
+    try { return JSON.parse(localStorage.getItem(PEND_KEY) || "[]"); } catch { return []; }
+  }
+  function pendSave(list) {
+    try { localStorage.setItem(PEND_KEY, JSON.stringify(list)); } catch {}
+  }
   FT.Assets.put = async function (id, blob) {
     const r = await origPut(id, blob);           // 本地 IndexedDB
     if (Cloud.on && Cloud.token) {
@@ -172,18 +202,33 @@
           headers: { "X-File-Type": blob.type || "application/octet-stream" },
           body: blob
         });
-      } catch (e) { console.warn("云端上传失败", id, e); FT.toast("照片已存本地，云端上传失败稍后重试 ☁"); }
+        const p = pendList();                     // 上传成功则从待重试名单移除
+        if (p.includes(id)) pendSave(p.filter(x => x !== id));
+      } catch (e) {
+        console.warn("云端上传失败", id, e);
+        const p = pendList();
+        if (!p.includes(id)) { p.push(id); pendSave(p); }
+        FT.toast("照片已存本地，云端上传失败，稍后自动重试 ☁");
+      }
     }
     return r;
   };
   FT.Assets.del = function (id) {
     origDel(id);
+    pendSave(pendList().filter(x => x !== id));
     if (Cloud.on && Cloud.token)
-      fetch(Cloud.url("/api/asset/") + id, { method: "DELETE" }).catch(() => {}).catch(() => {});
+      fetch(Cloud.url("/api/asset/") + id, { method: "DELETE" }).catch(() => {});
   };
   FT.Assets.url = async function (id) {
     if (!id) return "";
-    if (Cloud.on) return Cloud.url("/api/asset/") + id;   // 云模式：直接用云端地址，任何设备都能看到
+    if (Cloud.on) {
+      /* 该资产云端上传失败过 → 用本地副本，本机仍能看到照片 */
+      if (pendList().includes(id)) {
+        const blob = await this.get(id);
+        if (blob) return URL.createObjectURL(blob);
+      }
+      return Cloud.url("/api/asset/") + id;   // 云模式：直接用云端地址，任何设备都能看到
+    }
     if (this._urlCache.has(id)) return this._urlCache.get(id);
     const blob = await this.get(id);
     if (!blob) return "";

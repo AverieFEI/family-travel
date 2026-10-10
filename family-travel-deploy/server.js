@@ -287,10 +287,15 @@ async function handleApi(req, res, pathname, query) {
   if (assetMatch) {
     const id = assetMatch[1];
     if (req.method === "PUT") {
-      const body = await readBody(req);
-      const type = req.headers["x-file-type"] || "application/octet-stream";
-      await putAsset(id, body, type); saveDb();
-      return send(ok({ id, size: body.length }));
+      try {
+        const body = await readBody(req);
+        const type = req.headers["x-file-type"] || "application/octet-stream";
+        await putAsset(id, body, type); saveDb();
+        return send(ok({ id, size: body.length }));
+      } catch (e) {
+        console.error("资产上传失败:", e);
+        return send(bad("上传失败：" + (e && e.message ? e.message : String(e))), 500);
+      }
     }
     if (req.method === "GET") {
       const a = await getAssetBuf(id);
@@ -452,7 +457,7 @@ async function handleApi(req, res, pathname, query) {
       return serveStatic(req, res, pathname);
     } catch (e) {
       console.error("请求处理出错:", e);
-      try { res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" }); res.end(bad("服务器内部错误")); } catch {}
+      try { res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" }); res.end(bad("服务器内部错误: " + (e && e.message ? e.message : String(e)))); } catch {}
     }
   });
   server.listen(PORT, HOST, () => {

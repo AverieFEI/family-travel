@@ -282,6 +282,78 @@ async function handleApi(req, res, pathname, query) {
   if (req.method === "GET" && pathname === "/api/ping")
     return send(ok({ cloud: true, version: 2, pg: !!pgPool }));
 
+  /* ---- 存储体检：数据库多大、照片占了多少、有多少"无主"照片 ---- */
+  if (req.method === "GET" && pathname === "/api/storage") {
+    if (!pgPool) return send(ok({ pg: false, local: true }));
+    try {
+      const dbSize = (await pgPool.query(`SELECT pg_database_size(current_database()) AS s`)).rows[0].s;
+      const ast = (await pgPool.query(
+        `SELECT count(*)::int AS n, COALESCE(sum(length(data)),0)::bigint AS bytes, COALESCE(max(length(data)),0)::bigint AS max
+         FROM ft_assets`
+      )).rows[0];
+      const stateSize = (await pgPool.query(
+        `SELECT COALESCE(length(data::text),0)::bigint AS s FROM app_state WHERE k='main'`
+      )).rows[0].s;
+      /* 统计"无主照片"：库里存在、但没有任何记录引用它（删除记录后残留的孤儿文件） */
+      const used = new Set();
+      for (const r of db.records || []) {
+        if (r.cover) used.add(r.cover);
+        (r.media || []).forEach(m => { if (m.asset) used.add(m.asset); });
+      }
+      const orphans = Object.keys(db.assetsMeta || {}).filter(id => !used.has(id));
+      let orphanBytes = 0;
+      for (const id of orphans) orphanBytes += (db.assetsMeta[id] && db.assetsMeta[id].size) || 0;
+      return send(ok({
+        pg: true,
+        dbBytes: Number(dbSize),
+        assets: { count: ast.n, bytes: Number(ast.bytes), maxBytes: Number(ast.max) },
+        stateBytes: Number(stateSize),
+        orphanCount: orphans.length,
+        orphanBytes,
+        recordCount: (db.records || []).length,
+        mb: {
+          db: +(Number(dbSize) / 1048576).toFixed(1),
+          assets: +(Number(ast.bytes) / 1048576).toFixed(1),
+          state: +(Number(stateSize) / 1048576).toFixed(2),
+          orphan: +(orphanBytes / 1048576).toFixed(1)
+        }
+      }));
+    } catch (e) {
+      return send(bad("体检失败：" + (e && e.message ? e.message : String(e))), 500);
+    }
+  }
+
+  /* ---- 一键清理：删除"无主照片"并回收数据库空间 ---- */
+  if (req.method === "POST" && pathname === "/api/storage/cleanup") {
+    const body2 = await readJson(req);
+    const tk = query.get("token") || body2.token;
+    if (!tk || !db.tokens[tk]) return send(bad("请先登录网站后再来清理", 401), 401);
+    if (!pgPool) return send(bad("当前未使用云数据库，无需清理"));
+    try {
+      const used = new Set();
+      for (const r of db.records || []) {
+        if (r.cover) used.add(r.cover);
+        (r.media || []).forEach(m => { if (m.asset) used.add(m.asset); });
+      }
+      const orphans = Object.keys(db.assetsMeta || {}).filter(id => !used.has(id));
+      let freed = 0;
+      for (const id of orphans) {
+        freed += (db.assetsMeta[id] && db.assetsMeta[id].size) || 0;
+        await delAsset(id);
+      }
+      saveDb();
+      /* 回收磁盘：VACUUM FULL 把已删除空间真正还给 Neon（否则额度不释放） */
+      try {
+        await pgPool.query(`VACUUM FULL ft_assets`);
+        await pgPool.query(`VACUUM FULL app_state`);
+      } catch (e) { console.warn("VACUUM 失败（不影响清理结果）:", e.message); }
+      console.log(`🧹 清理完成：删除 ${orphans.length} 个无主资产，释放约 ${(freed / 1048576).toFixed(1)} MB`);
+      return send(ok({ removed: orphans.length, freedBytes: freed, freedMB: +(freed / 1048576).toFixed(1) }));
+    } catch (e) {
+      return send(bad("清理失败：" + (e && e.message ? e.message : String(e))), 500);
+    }
+  }
+
   /* ---- 资产（照片/视频/Live图） ---- */
   const assetMatch = pathname.match(/^\/api\/asset\/([\w-]+)$/);
   if (assetMatch) {

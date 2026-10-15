@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据恢复 · 家庭旅行</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: linear-gradient(160deg,#fff5ec,#e9f3fb); min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; color: #334; }
+  .card { background: #fff; border-radius: 22px; box-shadow: 0 24px 70px rgba(40,70,90,.14); padding: 30px 26px; width: min(480px, 100%); }
+  h1 { font-size: 21px; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #889; margin-bottom: 18px; line-height: 1.7; }
+  .warn { background: #fff6e5; color: #8a5a00; font-size: 13px; padding: 12px 14px; border-radius: 12px; margin-bottom: 18px; line-height: 1.7; }
+  .row { display: flex; justify-content: space-between; padding: 11px 4px; border-bottom: 1px dashed #e6ebf1; font-size: 15px; }
+  .row b { font-size: 17px; }
+  button { width: 100%; margin-top: 14px; padding: 14px; border: 0; border-radius: 14px; background: linear-gradient(135deg,#5ac8fa,#3f7dff); color: #fff; font-size: 15px; cursor: pointer; transition: .2s; }
+  button:hover { filter: brightness(1.07); }
+  button.alt { background: linear-gradient(135deg,#ff8a5c,#ff5c8a); }
+  button:disabled { background: #cfd6de; cursor: not-allowed; }
+  #msg { margin-top: 14px; font-size: 14px; padding: 12px 14px; border-radius: 10px; display: none; line-height: 1.7; white-space: pre-wrap; }
+  .good { background: #e8f8ee; color: #1c7c46; display: block !important; }
+  .bad { background: #fdeeee; color: #b33; display: block !important; }
+  .info { background: #eef3fb; color: #356; display: block !important; }
+  .muted { text-align: center; margin-top: 16px; font-size: 13px; }
+  a { color: #3f7dff; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🛟 数据恢复工具</h1>
+  <p class="sub">检查这台设备上是否还保留着旅行记录，并把它重新推回云端。</p>
+
+  <div class="warn">⚠️ 请先<b>不要</b>打开网站首页——首页会自动用服务器上的（已丢失的）数据覆盖本机备份。先在本页操作。</div>
+
+  <div id="stats">正在检查本机数据…</div>
+
+  <button id="exportBtn">💾 导出本机备份文件（JSON）</button>
+  <button id="restoreBtn" class="alt" disabled>☁️ 把本机数据恢复回云端</button>
+
+  <div id="msg"></div>
+  <p class="muted"><a href="/">返回首页</a></p>
+</div>
+
+<script>
+const BASE = location.origin;
+const $ = (s) => document.querySelector(s);
+const LS = { records: "ft_records", routes: "ft_routes", families: "ft_families", users: "ft_users", session: "ft_session" };
+let IDB = null;
+
+/* 打开本地照片库（和网站同一个库） */
+function openIdb() {
+  return new Promise((resolve) => {
+    const req = indexedDB.open("ft-media", 1);
+    req.onsuccess = (e) => { IDB = e.target.result; resolve(true); };
+    req.onerror = () => resolve(false);
+  });
+}
+function idbGet(id) {
+  return new Promise((resolve) => {
+    const r = IDB.transaction("assets", "readonly").objectStore("assets").get(id);
+    r.onsuccess = () => resolve(r.result || null);
+    r.onerror = () => resolve(null);
+  });
+}
+function idbKeys() {
+  return new Promise((resolve) => {
+    const r = IDB.transaction("assets", "readonly").objectStore("assets").getAllKeys();
+    r.onsuccess = () => resolve(r.result || []);
+    r.onerror = () => resolve([]);
+  });
+}
+
+let RECORDS = [], ROUTES = [], FAMILIES = {}, ASSET_KEYS = [];
+function usedAssetIds() {
+  const set = new Set();
+  RECORDS.forEach(rec => {
+    if (rec.cover) set.add(rec.cover);
+    (rec.media || []).forEach(m => { if (m.asset) set.add(m.asset); });
+  });
+  return set;
+}
+
+async function scan() {
+  await openIdb();
+  RECORDS = JSON.parse(localStorage.getItem(LS.records) || "[]");
+  ROUTES = JSON.parse(localStorage.getItem(LS.routes) || "[]");
+  FAMILIES = JSON.parse(localStorage.getItem(LS.families) || "{}");
+  ASSET_KEYS = IDB ? await idbKeys() : [];
+  const used = usedAssetIds();
+  const mine = RECORDS.filter(r => r.owner && r.owner !== "system").length;
+  $("#stats").innerHTML = `
+    <div class="row"><span>本机记录</span><b>${RECORDS.length} 条（自己的 ${mine} 条）</b></div>
+    <div class="row"><span>地图路线</span><b>${ROUTES.length} 条</b></div>
+    <div class="row"><span>本机照片文件</span><b>${ASSET_KEYS.length} 个</b></div>
+    <div class="row"><span>被记录引用的照片</span><b>${used.size} 个（本机有 ${[...used].filter(id => ASSET_KEYS.includes(id)).length} 个）</b></div>`;
+  if (!RECORDS.length) {
+    $("#msg").className = "bad";
+    $("#msg").textContent = "这台设备上没有找到任何记录备份。请到当初创建/上传照片的那台设备（另一个手机或电脑）上打开本页再试。";
+  } else {
+    const token = localStorage.getItem("ft_cloud_token");
+    if (token) { $("#restoreBtn").disabled = false; }
+    else {
+      $("#msg").className = "info";
+      $("#msg").textContent = "本机有数据，但还没登录。请先去首页登录账号，再回到本页点恢复。";
+    }
+  }
+}
+
+$("#exportBtn").addEventListener("click", () => {
+  const data = { at: new Date().toISOString(), records: RECORDS, routes: ROUTES, families: FAMILIES, assetIds: ASSET_KEYS };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "family-travel-backup-" + Date.now() + ".json";
+  a.click();
+  $("#msg").className = "good";
+  $("#msg").textContent = "备份已下载（含全部记录的文字信息；照片需在本页点「恢复回云端」重新上传）。";
+});
+
+$("#restoreBtn").addEventListener("click", async () => {
+  const token = localStorage.getItem("ft_cloud_token");
+  if (!token) { $("#msg").className = "bad"; $("#msg").textContent = "未登录，请先登录。"; return; }
+  const used = [...usedAssetIds()];
+  const btn = $("#restoreBtn");
+  btn.disabled = true;
+  let up = 0, fail = 0;
+  $("#msg").className = "info";
+  for (const id of used) {
+    const blob = await idbGet(id);
+    if (!blob) continue;
+    try {
+      const r = await fetch(BASE + "/api/asset/" + id, {
+        method: "PUT",
+        headers: { "X-File-Type": blob.type || "application/octet-stream" },
+        body: blob
+      });
+      if (r.ok) up++; else fail++;
+    } catch { fail++; }
+    $("#msg").textContent = `正在上传照片… ${up + fail}/${used.length}（成功 ${up}，失败 ${fail}）`;
+  }
+  /* 推回记录/路线/家庭 */
+  const push = async (key, data) => {
+    const r = await fetch(BASE + "/api/sync", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, key, data })
+    });
+    return r.ok;
+  };
+  const okR = await push("records", RECORDS);
+  const okT = await push("routes", ROUTES);
+  const okF = await push("families", FAMILIES);
+  $("#msg").className = okR ? "good" : "bad";
+  $("#msg").textContent = `恢复完成：上传照片 ${up} 个${fail ? "（失败 " + fail + " 个，可能空间不足）" : ""}；记录 ${okR ? "✓" : "✗"}、路线 ${okT ? "✓" : "✗"}、家庭 ${okF ? "✓" : "✗"} 已同步。\n现在可以打开首页刷新查看了。`;
+  btn.disabled = false;
+});
+
+scan();
+</script>
+</body>
+</html>

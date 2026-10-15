@@ -32,20 +32,28 @@ const HOST = process.env.HOST || "0.0.0.0";
 
 /* ---------------- 云端 Postgres 连接（可选） ---------------- */
 let pgPool = null;
+let pgError = null;               // 最近一次数据库错误（/api/ping 会带上，方便排查）
 if (process.env.DATABASE_URL) {
   try {
     const { Pool } = require("pg");
     pgPool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
-      max: 5
+      max: 5,
+      /* 关键：单条语句 15 秒超时 + 10 秒连接超时，避免数据库卡住时整个服务假死（503） */
+      connectionTimeoutMillis: 10000,
+      options: "-c statement_timeout=15000"
     });
+    /* 必须监听，否则 pg 池的异步 error 会成为未捕获异常直接杀掉进程 */
+    pgPool.on("error", (e) => { console.error("pg pool error:", e && e.message); });
     console.log("🐘 已启用云端 Postgres 存储（DATABASE_URL）");
   } catch (e) {
     console.error("pg 模块不可用，回退到本地文件模式:", e.message);
     pgPool = null;
   }
 }
+/* 兜底：任何未捕获的 Promise 异常都只记录，绝不退出进程（退出会导致平台一直 503） */
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e && e.message ? e.message : e));
 
 /* ---------------- 数据库（内存 + 持久化） ---------------- */
 let db = {
@@ -59,10 +67,15 @@ let db = {
 let saveTimer = null;
 async function initStore() {
   if (pgPool) {
-    await pgPool.query(`CREATE TABLE IF NOT EXISTS app_state (k text PRIMARY KEY, data jsonb)`);
-    await pgPool.query(`CREATE TABLE IF NOT EXISTS ft_assets (id text PRIMARY KEY, type text, data bytea)`);
-    const r = await pgPool.query(`SELECT data FROM app_state WHERE k = 'main'`);
-    if (r.rows[0]) db = Object.assign(db, r.rows[0].data);
+    /* 每一步都单独容错：数据库满/被锁/超时都只降级，绝不让启动失败（否则平台健康检查不过 → 永久 503） */
+    try { await pgPool.query(`CREATE TABLE IF NOT EXISTS app_state (k text PRIMARY KEY, data jsonb)`); }
+    catch (e) { console.error("建表 app_state 失败:", e.message); pgError = e.message; }
+    try { await pgPool.query(`CREATE TABLE IF NOT EXISTS ft_assets (id text PRIMARY KEY, type text, data bytea)`); }
+    catch (e) { console.error("建表 ft_assets 失败:", e.message); pgError = e.message; }
+    try {
+      const r = await pgPool.query(`SELECT data FROM app_state WHERE k = 'main'`);
+      if (r.rows[0]) db = Object.assign(db, r.rows[0].data);
+    } catch (e) { console.error("读取云端数据失败:", e.message); pgError = e.message; }
   } else {
     try {
       const raw = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
@@ -70,7 +83,7 @@ async function initStore() {
     } catch { /* 首次运行 */ }
   }
   db.assetsMeta = db.assetsMeta || {};
-  await seedIfEmpty();
+  try { await seedIfEmpty(); } catch (e) { console.error("播种示例数据失败（可忽略）:", e.message); }
 }
 function saveDb() {
   clearTimeout(saveTimer);
@@ -280,17 +293,117 @@ async function handleApi(req, res, pathname, query) {
 
   /* ---- 健康检查 ---- */
   if (req.method === "GET" && pathname === "/api/ping")
-    return send(ok({ cloud: true, version: 2, pg: !!pgPool }));
+    return send(ok({ cloud: true, version: 2, pg: !!pgPool, pgError }));
+
+  /* ---- 存储体检：数据库多大、照片占了多少、有多少"无主"照片 ---- */
+  if (req.method === "GET" && pathname === "/api/storage") {
+    if (!pgPool) return send(ok({ pg: false, local: true }));
+    try {
+      const dbSize = (await pgPool.query(`SELECT pg_database_size(current_database()) AS s`)).rows[0].s;
+      const ast = (await pgPool.query(
+        `SELECT count(*)::int AS n, COALESCE(sum(length(data)),0)::bigint AS bytes, COALESCE(max(length(data)),0)::bigint AS max
+         FROM ft_assets`
+      )).rows[0];
+      const stateSize = (await pgPool.query(
+        `SELECT COALESCE(length(data::text),0)::bigint AS s FROM app_state WHERE k='main'`
+      )).rows[0].s;
+      /* 统计"无主照片"：库里存在、但没有任何记录引用它（删除记录后残留的孤儿文件） */
+      const used = new Set();
+      for (const r of db.records || []) {
+        if (r.cover) used.add(r.cover);
+        (r.media || []).forEach(m => { if (m.asset) used.add(m.asset); });
+      }
+      const orphans = Object.keys(db.assetsMeta || {}).filter(id => !used.has(id));
+      let orphanBytes = 0;
+      for (const id of orphans) orphanBytes += (db.assetsMeta[id] && db.assetsMeta[id].size) || 0;
+      return send(ok({
+        pg: true,
+        dbBytes: Number(dbSize),
+        assets: { count: ast.n, bytes: Number(ast.bytes), maxBytes: Number(ast.max) },
+        stateBytes: Number(stateSize),
+        orphanCount: orphans.length,
+        orphanBytes,
+        recordCount: (db.records || []).length,
+        mb: {
+          db: +(Number(dbSize) / 1048576).toFixed(1),
+          assets: +(Number(ast.bytes) / 1048576).toFixed(1),
+          state: +(Number(stateSize) / 1048576).toFixed(2),
+          orphan: +(orphanBytes / 1048576).toFixed(1)
+        }
+      }));
+    } catch (e) {
+      return send(bad("体检失败：" + (e && e.message ? e.message : String(e))), 500);
+    }
+  }
+
+  /* ---- 数据体检（诊断用：谁的记录还在库里，不含任何照片内容） ---- */
+  if (req.method === "GET" && pathname === "/api/diag") {
+    const byOwner = {};
+    (db.records || []).forEach(r => { byOwner[r.owner || "?"] = (byOwner[r.owner || "?"] || 0) + 1; });
+    const fams = Object.entries(db.families || {}).map(([id, f]) => ({
+      id, name: f.name, code: f.code, members: f.members || []
+    }));
+    return send(ok({
+      userCount: Object.keys(db.users || {}).length,
+      users: Object.keys(db.users || {}),
+      recordsByOwner: byOwner,
+      recordTotal: (db.records || []).length,
+      routeTotal: (db.routes || []).length,
+      assetMetaCount: Object.keys(db.assetsMeta || {}).length,
+      families: fams,
+      seeded: !!db.seeded
+    }));
+  }
+
+  /* ---- 一键清理：删除"无主照片"并回收数据库空间 ---- */
+  if (req.method === "POST" && pathname === "/api/storage/cleanup") {
+    const body2 = await readJson(req);
+    const tk = query.get("token") || body2.token;
+    if (!tk || !db.tokens[tk]) return send(bad("请先登录网站后再来清理", 401), 401);
+    if (!pgPool) return send(bad("当前未使用云数据库，无需清理"));
+    try {
+      const used = new Set();
+      for (const r of db.records || []) {
+        if (r.cover) used.add(r.cover);
+        (r.media || []).forEach(m => { if (m.asset) used.add(m.asset); });
+      }
+      const orphans = Object.keys(db.assetsMeta || {}).filter(id => !used.has(id));
+      let freed = 0;
+      if (orphans.length) {
+        /* 一次 SQL 批量删除（逐条删太慢，会被网关超时掐断返回 HTML 错误页） */
+        for (const id of orphans) freed += (db.assetsMeta[id] && db.assetsMeta[id].size) || 0;
+        await pgPool.query(`DELETE FROM ft_assets WHERE id = ANY($1)`, [orphans]);
+        for (const id of orphans) delete db.assetsMeta[id];
+        saveDb();
+      }
+      /* 后台轻整理：普通 VACUUM（不锁表、不重写大表）；不用 VACUUM FULL，它会独占锁导致新实例启动被卡死 → 503 */
+      pgPool.query(`VACUUM ft_assets`).catch(e => console.warn("VACUUM ft_assets:", e.message));
+      pgPool.query(`VACUUM app_state`).catch(e => console.warn("VACUUM app_state:", e.message));
+      console.log(`🧹 清理完成：删除 ${orphans.length} 个无主资产，释放约 ${(freed / 1048576).toFixed(1)} MB`);
+      return send(ok({
+        removed: orphans.length, freedBytes: freed,
+        freedMB: +(freed / 1048576).toFixed(1),
+        note: "空间已删除并可在后台复用；页面数字完全回落可能需要几分钟（后台整理中）"
+      }));
+    } catch (e) {
+      return send(bad("清理失败：" + (e && e.message ? e.message : String(e))), 500);
+    }
+  }
 
   /* ---- 资产（照片/视频/Live图） ---- */
   const assetMatch = pathname.match(/^\/api\/asset\/([\w-]+)$/);
   if (assetMatch) {
     const id = assetMatch[1];
     if (req.method === "PUT") {
-      const body = await readBody(req);
-      const type = req.headers["x-file-type"] || "application/octet-stream";
-      await putAsset(id, body, type); saveDb();
-      return send(ok({ id, size: body.length }));
+      try {
+        const body = await readBody(req);
+        const type = req.headers["x-file-type"] || "application/octet-stream";
+        await putAsset(id, body, type); saveDb();
+        return send(ok({ id, size: body.length }));
+      } catch (e) {
+        console.error("资产上传失败:", e);
+        return send(bad("上传失败：" + (e && e.message ? e.message : String(e))), 500);
+      }
     }
     if (req.method === "GET") {
       const a = await getAssetBuf(id);
@@ -434,8 +547,9 @@ async function handleApi(req, res, pathname, query) {
 }
 
 /* ---------------- 启动 ---------------- */
-(async () => {
-  await initStore();
+/* 重要：先监听端口（让平台健康检查立刻通过），再去初始化数据库。
+   以前是「先连数据库再监听」，数据库一旦卡住/写满，服务永远起不来 → 网页一直 503。 */
+function startServer() {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
@@ -452,7 +566,7 @@ async function handleApi(req, res, pathname, query) {
       return serveStatic(req, res, pathname);
     } catch (e) {
       console.error("请求处理出错:", e);
-      try { res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" }); res.end(bad("服务器内部错误")); } catch {}
+      try { res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" }); res.end(bad("服务器内部错误: " + (e && e.message ? e.message : String(e)))); } catch {}
     }
   });
   server.listen(PORT, HOST, () => {
@@ -462,5 +576,76 @@ async function handleApi(req, res, pathname, query) {
     console.log(`  🌐 本机访问:   http://localhost:${PORT}`);
     console.log(`  📱 局域网访问: http://<你的IP>:${PORT}  （家人手机连同一 WiFi 即可打开）`);
     console.log("-family--------------------------------------");
+    /* 端口已可访问后再慢慢连数据库，失败也只是降级，不影响网页打开 */
+    initStore()
+      .catch(e => console.error("数据库初始化失败（已降级，网页仍可打开）:", e && e.message))
+      .then(() => migrateFromOld());   /* 若设置了 MIGRATE_FROM_URL，自动把旧库数据搬到新库 */
   });
-})().catch(e => { console.error("启动失败:", e); process.exit(1); });
+}
+
+/* ---------------- 一次性数据搬迁：旧库（已满/只读）→ 新库 ----------------
+ * 用法：CloudBase 环境变量里设 DATABASE_URL=新库连接串、MIGRATE_FROM_URL=旧库连接串。
+ * 服务启动后自动：①复制账号/家庭/记录/路线；②逐张复制照片（跳过无主孤儿，节省空间）。
+ * 完成后日志会提示删除 MIGRATE_FROM_URL（不删的话每次启动都会重搬一遍，但已有数据会跳过，无害）。 */
+async function migrateFromOld() {
+  const oldUrl = process.env.MIGRATE_FROM_URL;
+  if (!oldUrl || !pgPool) return;
+  let old;
+  try {
+    const { Pool } = require("pg");
+    old = new Pool({
+      connectionString: oldUrl,
+      ssl: { rejectUnauthorized: false },
+      max: 2,
+      connectionTimeoutMillis: 10000,
+      options: "-c statement_timeout=60000"
+    });
+  } catch (e) { console.error("搬迁：无法连接旧库", e.message); return; }
+  try {
+    console.log("🚚 [搬迁] 开始从旧数据库搬运数据…");
+    /* ① 搬 app_state（账号/家庭/记录/路线/assetsMeta 全在里面） */
+    const st = await old.query(`SELECT data FROM app_state WHERE k = 'main'`);
+    if (st.rows[0]) {
+      const data = st.rows[0].data;
+      await pgPool.query(
+        `INSERT INTO app_state (k, data) VALUES ('main', $1) ON CONFLICT (k) DO UPDATE SET data = $1`,
+        [JSON.stringify(data)]
+      );
+      db = Object.assign({ users: {}, families: {}, records: [], routes: [], tokens: {}, assetsMeta: {} }, data);
+      db.assetsMeta = db.assetsMeta || {};
+      console.log(`✅ [搬迁] 账号/记录已搬：${(db.records || []).length} 条记录`);
+    }
+    /* ② 搬照片：只搬被记录引用的（跳过孤儿省空间），跳过新库已有的 */
+    const used = new Set();
+    for (const rec of db.records || []) {
+      if (rec.cover) used.add(rec.cover);
+      (rec.media || []).forEach(m => { if (m.asset) used.add(m.asset); });
+    }
+    const have = new Set((await pgPool.query(`SELECT id FROM ft_assets`)).rows.map(x => x.id));
+    const allIds = (await old.query(`SELECT id FROM ft_assets`)).rows.map(x => x.id);
+    const ids = allIds.filter(id => used.has(id) && !have.has(id));
+    console.log(`🚚 [搬迁] 旧库共 ${allIds.length} 个文件，需搬运 ${ids.length} 个（其余为孤儿或已存在）`);
+    let done = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        const a = await old.query(`SELECT type, data FROM ft_assets WHERE id = $1`, [id]);
+        if (!a.rows[0]) continue;
+        await pgPool.query(
+          `INSERT INTO ft_assets (id, type, data) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`,
+          [id, a.rows[0].type, a.rows[0].data]
+        );
+        db.assetsMeta[id] = db.assetsMeta[id] || { type: a.rows[0].type, size: a.rows[0].data.length, at: Date.now() };
+        done++;
+        if (done % 200 === 0) console.log(`🚚 [搬迁] 进度 ${done}/${ids.length}`);
+      } catch (e) { fail++; console.warn(`[搬迁] ${id} 失败:`, e.message); }
+    }
+    saveDb();
+    console.log(`🎉 [搬迁] 完成！成功 ${done}，失败 ${fail}。请到 CloudBase 删除 MIGRATE_FROM_URL 环境变量。`);
+  } catch (e) {
+    console.error("搬迁失败:", e && e.message);
+  } finally {
+    await old.end().catch(() => {});
+  }
+}
+
+startServer();
